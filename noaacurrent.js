@@ -7,296 +7,367 @@
  * MIT Licensed.
  */
 Module.register("noaacurrent", {
-	// Default module config.
-	defaults: {
-		lat: 0,
-		lon: 0,
-		units: config.units,
-		updateInterval: 10 * 60 * 1000, // every 10 minutes
-		animationSpeed: 1000,
-		timeFormat: config.timeFormat,
-		lang: config.language,
-		decimalSymbol: ".",
-		degreeLabel: false,
+    // Default module config.
+    defaults: {
+        lat: 0,
+        lon: 0,
+        units: config.units,
+        updateInterval: 10 * 60 * 1000, // every 10 minutes
+        animationSpeed: 1000,
+        timeFormat: config.timeFormat,
+        lang: config.language,
+        decimalSymbol: ".",
+        degreeLabel: false,
 
-		showPeriod: true,
-		showPeriodUpper: false,
-		showWindDirection: true,
-		showWindDirectionAsArrow: false,
-		showHumidity: true,
-		showSun: true,
-		showIndoorTemperature: false,
-		showIndoorHumidity: false,
-		showFeelsLike: true,
+        showPeriod: true,
+        showPeriodUpper: false,
+        showWindDirection: true,
+        showWindDirectionAsArrow: false,
+        showHumidity: true,
+        showSun: true,
+        showIndoorTemperature: false,
+        showIndoorHumidity: false,
+        showFeelsLike: true,
 
-		useBeaufort: false,
-		useKMPHwind: true,
+        useBeaufort: false,
+        useKMPHwind: true,
 
-		initialLoadDelay: 0, // 0 seconds delay
-		retryDelay: 2500,
+        initialLoadDelay: 0, // 0 seconds delay
+        retryDelay: 2500,
 
-		apiBase: "https://api.weather.gov",
+        apiBase: "https://api.weather.gov",
 
-		appendLocationNameToHeader: true,
-		calendarClass: "calendar",
-		tableClass: "large",
+        appendLocationNameToHeader: true,
+        calendarClass: "calendar",
+        tableClass: "large",
 
-		onlyTemp: false,
-		hideTemp: false,
-		roundTemp: false,
-	},
+        onlyTemp: false,
+        hideTemp: false,
+        roundTemp: false,
+    },
 
-	// create a variable for the first upcoming calendar event. Used if no location is specified.
-	firstEvent: false,
+    NOTIFICATION_GRIDPOINT_DATA: "NOAAWEATHER_GRIDPOINT_DATA",
+    NOTIFICATION_SUNRISE_DATA: "NOAAWEATHER_SUNRISE_DATA",
+    NOTIFICATION_CURRENT_DATA: "NOAAWEATHER_CURRENT_DATA",
+    NOTIFICATION_HOURLY_DATA: "NOAAWEATHER_HOURLY_DATA",
 
-	// create a variable to hold the location name based on the API result.
-	fetchedLocationName: "",
 
-	// Define required scripts.
-	getScripts: function () {
-		return ["moment.js"];
-	},
+    // create a variable for the first upcoming calendar event. Used if no location is specified.
+    firstEvent: false,
 
-	// Define required scripts.
-	getStyles: function () {
-		return ["noaacurrent.css"];
-	},
+    // create a variable to hold the location name based on the API result.
+    fetchedLocationName: "",
 
-	// Define required translations.
-	getTranslations: function () {
-		// The translations for the default modules are defined in the core translation files.
-		// Therefor we can just return false. Otherwise we should have returned a dictionary.
-		// If you're trying to build your own module including translations, check out the documentation.
-		return false;
-	},
+    // Define required scripts.
+    getScripts: function () {
+        return ["moment.js"];
+    },
 
-	// Define start sequence.
-	start: function () {
-		Log.info("Starting module: " + this.name);
+    // Define required scripts.
+    getStyles: function () {
+        return ["weather-icons.css", "noaacurrent.css"];
+    },
 
-		// Set locale.
-		moment.locale(config.language);
+    // Define required translations.
+    getTranslations: function () {
+        // The translations for the default modules are defined in the core translation files.
+        // Therefor we can just return false. Otherwise we should have returned a dictionary.
+        // If you're trying to build your own module including translations, check out the documentation.
+        return false;
+    },
 
-		this.windSpeed = null;
-		this.windDirection = null;
-		this.windDeg = null;
-		this.sunriseSunsetTime = null;
-		this.sunriseSunsetIcon = null;
-		this.temperature = null;
-		this.indoorTemperature = null;
-		this.indoorHumidity = null;
-		this.weatherType = null;
-		this.feelsLike = null;
-		this.loaded = false;
+    // Define start sequence.
+    start: function () {
+        Log.info("Starting module: " + this.name);
 
-		this.scheduleUpdate(this.config.initialLoadDelay);
-	},
+        // Set locale.
+        moment.locale(config.language);
 
-	// add extra information of current weather
-	// windDirection, humidity, sunrise and sunset
-	addExtraInfoWeather: function (wrapper) {
-		var small = document.createElement("div");
-		small.className = "normal medium";
+        this.windSpeed = null;
+        this.windDirection = null;
+        this.windDeg = null;
+        this.sunriseSunsetTime = null;
+        this.sunriseSunsetIcon = null;
+        this.temperature = null;
+        this.indoorTemperature = null;
+        this.indoorHumidity = null;
+        this.weatherType = null;
+        this.sunriseData = {};
+        this.feelsLike = null;
+        this.loaded = false;
+        this.officeData = null;
+        this.sunriseData = null;
 
-		var windIcon = document.createElement("span");
-		windIcon.className = "wi wi-strong-wind dimmed";
-		small.appendChild(windIcon);
+        this.scheduleUpdate(this.config.initialLoadDelay);
+    },
 
-		var windSpeed = document.createElement("span");
-		windSpeed.innerHTML = " " + this.windSpeed;
-		small.appendChild(windSpeed);
+    classifyWeather: (sunriseData, weatherType)=>{
+        var classifier = weatherType.split("/");
+        classifier = classifier[classifier.length-1].split("?")[0].split(",")[0];
 
-		if (this.config.showWindDirection) {
-			var windDirection = document.createElement("sup");
-			if (this.config.showWindDirectionAsArrow) {
-				if (this.windDeg !== null) {
-					windDirection.innerHTML = ' &nbsp;<i class="fa fa-long-arrow-down" style="transform:rotate(' + this.windDeg + 'deg);"></i>&nbsp;';
-				}
-			} else {
-				windDirection.innerHTML = " " + this.translate(this.windDirection);
-			}
-			small.appendChild(windDirection);
-		}
-		var spacer = document.createElement("span");
-		spacer.innerHTML = "&nbsp;";
-		small.appendChild(spacer);
+        var now = new Date().getTime();
+        var prefix = sunriseData['sunrise'] == null || (now < sunriseData.sunset && now >= sunriseData.sunrise ) ? "wi-day" : "wi-night";
 
-		if (this.config.showHumidity) {
-			var humidity = document.createElement("span");
-			humidity.innerHTML = this.humidity;
+        // Log.log("Weather classifier is: " + classifier);
 
-			var supspacer = document.createElement("sup");
-			supspacer.innerHTML = "&nbsp;";
+        var conditions = {
+            "skc": "sunny",
+            "few": "sunny",
+            "sct": "sunny-overcast",
+            "bkn": "sunny-overcast",
+            "ovc": "cloudy",
+            "wind_skc": "windy",
+            "wind_few": "windy",
+            "wind_sct": "cloudy-windy",
+            "wind_bkn": "cloudy-windy",
+            "wind_ovc": "cloudy-windy",
+            "snow": "snow",
+            "rain_snow": "rain-mix",
+            "rain_sleet": "sleet",
+            "snow_sleet": "sleet",
+            "fzra": "rain-mix",
+            "rain_fzra": "rain-mix",
+            "snow_fzra": "rain-mix",
+            "sleet": "sleet",
+            "rain": "rain",
+            "rain_showers": "showers",
+            "rain_showers_hi": "showers",
+            "tsra": "thunderstorm",
+            "tsra_sct": "thunderstorm",
+            "tsra_hi": "thunderstorm",
+            "tornado": "wi-tornado",
+            "hurricane": "wi-hurricane-warning",
+            "tropical_storm": "wi-hurricane",
+            "dust": "wi-dust",
+            "smoke": "wi-smoke",
+            "haze": "wi-haze",
+            "hot": "wi-hot",
+            "cold": "wi-cold",
+            "blizzard": "snow-wind",
+            "fog": "fog",
+        };
 
-			var humidityIcon = document.createElement("sup");
-			humidityIcon.className = "wi wi-humidity humidityIcon";
-			humidityIcon.innerHTML = "&nbsp;";
+        var corrections = {
+            'wi-night-sunny': 'wi-night-clear',
+            'wi-night-sunny-overcast': 'wi-night-partly-cloudy',
+        }
 
-			small.appendChild(humidity);
-			small.appendChild(supspacer);
-			small.appendChild(humidityIcon);
-		}
+        var condition = conditions[classifier];
+        if ( condition == null ){
+            return prefix;
+        }
+        else if ( condition.startsWith('wi-') ){
+            return condition;
+        }
+        else{
+            var result = prefix + "-" + condition;
+            var corrected = corrections[result];
+            return corrected != null ? corrected : result;
+        }
+    },
 
-		if (this.config.showSun) {
-			var sunriseSunsetIcon = document.createElement("span");
-			sunriseSunsetIcon.className = "wi dimmed " + this.sunriseSunsetIcon;
-			small.appendChild(sunriseSunsetIcon);
+    // add extra information of current weather
+    // windDirection, humidity, sunrise and sunset
+    addExtraInfoWeather: function (wrapper) {
+        var small = document.createElement("div");
+        small.className = "normal medium";
 
-			var sunriseSunsetTime = document.createElement("span");
-			sunriseSunsetTime.innerHTML = " " + this.sunriseSunsetTime;
-			small.appendChild(sunriseSunsetTime);
-		}
+        var windIcon = document.createElement("span");
+        windIcon.className = "wi wi-strong-wind dimmed";
+        small.appendChild(windIcon);
 
-		wrapper.appendChild(small);
-	},
+        var windSpeed = document.createElement("span");
+        windSpeed.innerHTML = " " + this.windSpeed;
+        small.appendChild(windSpeed);
 
-	// Override dom generator.
-	getDom: function () {
-		var wrapper = document.createElement("div");
-		wrapper.className = this.config.tableClass;
+        if (this.config.showWindDirection) {
+            var windDirection = document.createElement("sup");
+            if (this.config.showWindDirectionAsArrow) {
+                if (this.windDeg !== null) {
+                    windDirection.innerHTML = ' &nbsp;<i class="fa fa-long-arrow-down" style="transform:rotate(' + this.windDeg + 'deg);"></i>&nbsp;';
+                }
+            } else {
+                windDirection.innerHTML = " " + this.translate(this.windDirection);
+            }
+            small.appendChild(windDirection);
+        }
+        var spacer = document.createElement("span");
+        spacer.innerHTML = "&nbsp;";
+        small.appendChild(spacer);
 
-		if (this.config.appid === "") {
-			wrapper.innerHTML = "Please set the correct openweather <i>appid</i> in the config for module: " + this.name + ".";
-			wrapper.className = "dimmed light small";
-			return wrapper;
-		}
+        if (this.config.showHumidity) {
+            var humidity = document.createElement("span");
+            humidity.innerHTML = this.humidity;
 
-		if (!this.loaded) {
-			wrapper.innerHTML = this.translate("LOADING");
-			wrapper.className = "dimmed light small";
-			return wrapper;
-		}
+            var supspacer = document.createElement("sup");
+            supspacer.innerHTML = "&nbsp;";
 
-		if (this.config.onlyTemp === false) {
-			this.addExtraInfoWeather(wrapper);
-		}
+            var humidityIcon = document.createElement("sup");
+            humidityIcon.className = "wi wi-humidity humidityIcon";
+            humidityIcon.innerHTML = "&nbsp;";
 
-		var large = document.createElement("div");
-		large.className = "light";
+            small.appendChild(humidity);
+            small.appendChild(supspacer);
+            small.appendChild(humidityIcon);
+        }
 
-		var degreeLabel = "";
-		if (this.config.units === "metric" || this.config.units === "imperial") {
-			degreeLabel += "°";
-		}
-		if (this.config.degreeLabel) {
-			switch (this.config.units) {
-				case "metric":
-					degreeLabel += "C";
-					break;
-				case "imperial":
-					degreeLabel += "F";
-					break;
-				case "default":
-					degreeLabel += "K";
-					break;
-			}
-		}
+        if (this.config.showSun) {
+            var sunriseSunsetIcon = document.createElement("span");
+            sunriseSunsetIcon.className = "wi dimmed " + this.sunriseSunsetIcon;
+            small.appendChild(sunriseSunsetIcon);
 
-		if (this.config.decimalSymbol === "") {
-			this.config.decimalSymbol = ".";
-		}
+            var sunriseSunsetTime = document.createElement("span");
+            sunriseSunsetTime.innerHTML = " " + this.sunriseSunsetTime;
+            small.appendChild(sunriseSunsetTime);
+        }
 
-		if (this.config.hideTemp === false) {
-			var weatherIconSpan = document.createElement("span");
-			weatherIconSpan.className = "wi weathericon";
+        wrapper.appendChild(small);
+    },
 
-            var weatherIcon = document.createElement("img");
-            weatherIcon.src = this.weatherType;
-            weatherIconSpan.appendChild(weatherIcon);
+    // Override dom generator.
+    getDom: function () {
+        var wrapper = document.createElement("div");
+        wrapper.className = this.config.tableClass;
 
-			large.appendChild(weatherIconSpan);
+        if (this.config.appid === "") {
+            wrapper.innerHTML = "Please set the correct openweather <i>appid</i> in the config for module: " + this.name + ".";
+            wrapper.className = "dimmed light small";
+            return wrapper;
+        }
 
-			var temperature = document.createElement("span");
-			temperature.className = "bright";
-			temperature.innerHTML = " " + this.temperature.replace(".", this.config.decimalSymbol) + degreeLabel;
-			large.appendChild(temperature);
-		}
+        if (!this.loaded) {
+            wrapper.innerHTML = this.translate("LOADING");
+            wrapper.className = "dimmed light small";
+            return wrapper;
+        }
 
-		if (this.config.showIndoorTemperature && this.indoorTemperature) {
-			var indoorIcon = document.createElement("span");
-			indoorIcon.className = "fa fa-home";
-			large.appendChild(indoorIcon);
+        if (this.config.onlyTemp === false) {
+            this.addExtraInfoWeather(wrapper);
+        }
 
-			var indoorTemperatureElem = document.createElement("span");
-			indoorTemperatureElem.className = "bright";
-			indoorTemperatureElem.innerHTML = " " + this.indoorTemperature.replace(".", this.config.decimalSymbol) + degreeLabel;
-			large.appendChild(indoorTemperatureElem);
-		}
+        var large = document.createElement("div");
+        large.className = "light";
 
-		if (this.config.showIndoorHumidity && this.indoorHumidity) {
-			var indoorHumidityIcon = document.createElement("span");
-			indoorHumidityIcon.className = "fa fa-tint";
-			large.appendChild(indoorHumidityIcon);
+        var degreeLabel = "";
+        if (this.config.units === "metric" || this.config.units === "imperial") {
+            degreeLabel += "°";
+        }
+        if (this.config.degreeLabel) {
+            switch (this.config.units) {
+                case "metric":
+                    degreeLabel += "C";
+                    break;
+                case "imperial":
+                    degreeLabel += "F";
+                    break;
+                case "default":
+                    degreeLabel += "K";
+                    break;
+            }
+        }
 
-			var indoorHumidityElem = document.createElement("span");
-			indoorHumidityElem.className = "bright";
-			indoorHumidityElem.innerHTML = " " + this.indoorHumidity + "%";
-			large.appendChild(indoorHumidityElem);
-		}
+        if (this.config.decimalSymbol === "") {
+            this.config.decimalSymbol = ".";
+        }
 
-		wrapper.appendChild(large);
+        if (this.config.hideTemp === false && this.loaded == true) {
+            var weatherIconSpan = document.createElement("span");
+            var weatherClass = this.classifyWeather(this.sunriseData, this.weatherType);
+            weatherIconSpan.className = "wi weathericon " + weatherClass;
 
-		if (this.config.showFeelsLike && this.config.onlyTemp === false) {
-			var small = document.createElement("div");
-			small.className = "normal medium";
+            large.appendChild(weatherIconSpan);
 
-			var feelsLike = document.createElement("span");
-			feelsLike.className = "dimmed";
-			feelsLike.innerHTML = this.translate("FEELS") + " " + this.feelsLike + degreeLabel;
-			small.appendChild(feelsLike);
+            var temperature = document.createElement("span");
+            temperature.className = "bright";
+            temperature.innerHTML = " " + this.temperature.replace(".", this.config.decimalSymbol) + degreeLabel;
+            large.appendChild(temperature);
+        }
 
-			wrapper.appendChild(small);
-		}
+        if (this.config.showIndoorTemperature && this.indoorTemperature) {
+            var indoorIcon = document.createElement("span");
+            indoorIcon.className = "fa fa-home";
+            large.appendChild(indoorIcon);
 
-		return wrapper;
-	},
+            var indoorTemperatureElem = document.createElement("span");
+            indoorTemperatureElem.className = "bright";
+            indoorTemperatureElem.innerHTML = " " + this.indoorTemperature.replace(".", this.config.decimalSymbol) + degreeLabel;
+            large.appendChild(indoorTemperatureElem);
+        }
 
-	// Override getHeader method.
-	getHeader: function () {
-		if (this.config.appendLocationNameToHeader && this.data.header !== undefined) {
-			return this.data.header + " " + this.fetchedLocationName;
-		}
+        if (this.config.showIndoorHumidity && this.indoorHumidity) {
+            var indoorHumidityIcon = document.createElement("span");
+            indoorHumidityIcon.className = "fa fa-tint";
+            large.appendChild(indoorHumidityIcon);
 
-		if (this.config.useLocationAsHeader && this.config.location !== false) {
-			return this.config.location;
-		}
+            var indoorHumidityElem = document.createElement("span");
+            indoorHumidityElem.className = "bright";
+            indoorHumidityElem.innerHTML = " " + this.indoorHumidity + "%";
+            large.appendChild(indoorHumidityElem);
+        }
 
-		return this.data.header;
-	},
+        wrapper.appendChild(large);
 
-	// Override notification handler.
-	notificationReceived: function (notification, payload, sender) {
-		if (notification === "DOM_OBJECTS_CREATED") {
-			if (this.config.appendLocationNameToHeader) {
-				this.hide(0, { lockString: this.identifier });
-			}
-		}
-		if (notification === "CALENDAR_EVENTS") {
-			var senderClasses = sender.data.classes.toLowerCase().split(" ");
-			if (senderClasses.indexOf(this.config.calendarClass.toLowerCase()) !== -1) {
-				this.firstEvent = false;
+        if (this.config.showFeelsLike && this.config.onlyTemp === false) {
+            var small = document.createElement("div");
+            small.className = "normal medium";
 
-				for (var e in payload) {
-					var event = payload[e];
-					if (event.location || event.geo) {
-						this.firstEvent = event;
-						//Log.log("First upcoming event with location: ", event);
-						break;
-					}
-				}
-			}
-		}
-		if (notification === "INDOOR_TEMPERATURE") {
-			this.indoorTemperature = this.roundValue(payload);
-			this.updateDom(this.config.animationSpeed);
-		}
-		if (notification === "INDOOR_HUMIDITY") {
-			this.indoorHumidity = this.roundValue(payload);
-			this.updateDom(this.config.animationSpeed);
-		}
-	},
+            var feelsLike = document.createElement("span");
+            feelsLike.className = "dimmed";
+            feelsLike.innerHTML = this.translate("FEELS") + " " + this.feelsLike + degreeLabel;
+            small.appendChild(feelsLike);
 
-    makeRequest: function(method, url){
+            wrapper.appendChild(small);
+        }
+
+        return wrapper;
+    },
+
+    // Override getHeader method.
+    getHeader: function () {
+        if (this.config.appendLocationNameToHeader && this.data.header !== undefined) {
+            return this.data.header + " " + this.fetchedLocationName;
+        }
+
+        if (this.config.useLocationAsHeader && this.config.location !== false) {
+            return this.config.location;
+        }
+
+        return this.data.header;
+    },
+
+    // Override notification handler.
+    notificationReceived: function (notification, payload, sender) {
+        if (notification === "DOM_OBJECTS_CREATED") {
+            if (this.config.appendLocationNameToHeader) {
+                this.hide(0, { lockString: this.identifier });
+            }
+        }
+        if (notification === "CALENDAR_EVENTS") {
+            var senderClasses = sender.data.classes.toLowerCase().split(" ");
+            if (senderClasses.indexOf(this.config.calendarClass.toLowerCase()) !== -1) {
+                this.firstEvent = false;
+
+                for (var e in payload) {
+                    var event = payload[e];
+                    if (event.location || event.geo) {
+                        this.firstEvent = event;
+                        //Log.log("First upcoming event with location: ", event);
+                        break;
+                    }
+                }
+            }
+        }
+        if (notification === "INDOOR_TEMPERATURE") {
+            this.indoorTemperature = this.roundValue(payload);
+            this.updateDom(this.config.animationSpeed);
+        }
+        if (notification === "INDOOR_HUMIDITY") {
+            this.indoorHumidity = this.roundValue(payload);
+            this.updateDom(this.config.animationSpeed);
+        }
+    },
+
+    makeRequest: function(method, url, self){
         return new Promise(function(resolve, reject){
             var request = new XMLHttpRequest();
             request.open(method, url, true);
@@ -308,6 +379,7 @@ Module.register("noaacurrent", {
                 else{
                     self.scheduleUpdate(self.loaded ? -1 : self.config.retryDelay);
 
+                    Log.error("Error calling " + url + ": " + this.status + " " + request.statusText );
                     reject({
                         status: this.status,
                         statusText: request.statusText
@@ -315,10 +387,13 @@ Module.register("noaacurrent", {
                 }
             };
 
-            request.onerror = function(){
+            request.onerror = function(err){
+                self.scheduleUpdate(self.loaded ? -1 : self.config.retryDelay);
+                Log.error("Error calling " + url + ": " + err )
                 reject({
                     status: this.status,
-                    statusText: request.statusText
+                    statusText: request.statusText,
+                    err: err,
                 });
             };
 
@@ -331,98 +406,97 @@ Module.register("noaacurrent", {
      * Calls processWeather on succesfull response.
      */
     updateWeather: function (officeData) {
-        Log.log("Looking up current conditions from office URL: " + officeData.properties.forecast);
+        Log.log("Looking up current conditions from office URL: " + officeData.properties.forecastGridData);
 
         var url = officeData.properties.forecastGridData;
         var self = this;
         var retry = true;
         var currentConditions = {};
 
-        this.makeRequest("GET", url).then((response)=>{
+        this.makeRequest("GET", url, self).then((response)=>{
             currentConditions = response;
-            return self.makeRequest("GET", officeData.properties.forecastHourly);
+            return self.makeRequest("GET", officeData.properties.forecastHourly, self);
         }).then((response)=>{
             self.processWeather(currentConditions, response, officeData);
         });
     },
 
-	updateOfficeWeather: function(){
-		Log.log("Looking up NOAA weather by lat/long");
+    updateOfficeWeather: function(){
+        // Log.log("Looking up NOAA weather by lat/long");
 
-		var url = this.config.apiBase + '/points/' + this.config.lat + "," + this.config.lon;
-		var self = this;
-		var retry = true;
+        var url = this.config.apiBase + '/points/' + this.config.lat + "," + this.config.lon;
+        var self = this;
         var officeData = {};
 
-        var officePromise = this.makeRequest("GET", url)
+        Log.log("Retrieving gridpoint information from: '" + url + "'");
+        var officePromise = this.makeRequest("GET", url, self)
                                 .then(function(response){
                                     officeData = response;
-                                    self.sendNotification("NOAAWEATHER_OFFICE_DATA", { data: response });
                                 })
                                 .catch(function(err){
                                     self.updateDom(self.config.animationSpeed);
-                                    retry = true;
-                                    Log.error("Failed to load NOAA office information for Lat/Lon: " + self.config.lat + "," + self.config.lon + ": " + err.statusText);
+                                    Log.error("Failed to load NOAA office information for Lat/Lon: " + self.config.lat + "," + self.config.lon + ": " + err.status);
                                 });
 
         var sunriseUrl = "https://api.sunrise-sunset.org/json?lat=" + this.config.lat + "&lng=" + this.config.lon + "&formatted=0";
-        var sunrisePromise = this.makeRequest("GET", sunriseUrl)
+        Log.log("Retrieving sunrise information from: '" + url + "'");
+        var sunrisePromise = this.makeRequest("GET", sunriseUrl, self)
                                 .then(function(response){
                                     self.processSunrise(response);
                                 })
                                 .catch(function(err){
-                                    Log.error("Failed to load sunrise/sunset information for Lat/Lon: " + self.config.lat + "," + self.config.lon + ": " + err.statusText);
+                                    Log.error("Failed to load sunrise/sunset information for Lat/Lon: " + self.config.lat + "," + self.config.lon + ": " + err.err);
                                 });
 
         Promise.all([officePromise, sunrisePromise]).then((values)=>{
-            Log.log("All prelim promises done, with values: " + values);
+            // Log.log("All prelim promises done, with values: " + values);
             self.updateWeather(officeData);
         })
-	},
+    },
 
-	/* scheduleUpdate()
-	 * Schedule next update.
-	 *
-	 * argument delay number - Milliseconds before next update. If empty, this.config.updateInterval is used.
-	 */
-	scheduleUpdate: function (delay) {
-		var nextLoad = this.config.updateInterval;
-		if (typeof delay !== "undefined" && delay >= 0) {
-			nextLoad = delay;
-		}
+    /* scheduleUpdate()
+     * Schedule next update.
+     *
+     * argument delay number - Milliseconds before next update. If empty, this.config.updateInterval is used.
+     */
+    scheduleUpdate: function (delay) {
+        var nextLoad = this.config.updateInterval;
+        if (typeof delay !== "undefined" && delay >= 0) {
+            nextLoad = delay;
+        }
 
-		Log.log("Scheduling update for weather at " + nextLoad);
+        // Log.log("Scheduling update for weather at " + nextLoad);
 
-		var self = this;
-		setTimeout(function () {
-			self.updateOfficeWeather();
-		}, nextLoad);
-	},
+        var self = this;
+        setTimeout(function () {
+            self.updateOfficeWeather();
+        }, nextLoad);
+    },
 
-	findLatest: function(measurements){
-		var latest = null;
-		var now = new Date();
+    findLatest: function(measurements){
+        var latest = null;
+        var now = new Date();
 
-		measurements.forEach(measurement=>{
-			var mdate = Date.parse(measurement.validTime.split('/')[0])
-			if ( now > mdate ){
-				latest = measurement.value;
-			}
-		});
+        measurements.forEach(measurement=>{
+            var mdate = Date.parse(measurement.validTime.split('/')[0])
+            if ( now > mdate ){
+                latest = measurement.value;
+            }
+        });
 
-		return latest;
-	},
+        return latest;
+    },
 
     findMatchingTime: (measurements)=>{
         var now = new Date();
 
-        Log.log("Checking " + measurements.length + " measurements for the one capturing the current time...")
+        // Log.log("Checking " + measurements.length + " measurements for the one capturing the current time...")
         return measurements.find(measurement=>{
             var start = Date.parse(measurement.startTime);
             var end = Date.parse(measurement.endTime);
-            Log.log("Checking whether we're in the time period between: " + start + " and " + end);
+            // Log.log("Checking whether we're in the time period between: " + start + " and " + end);
             if ( now >= start && now < end ){
-                Log.log("We are. Found a match.");
+                // Log.log("We are. Found a match.");
                 return true;
             }
 
@@ -430,23 +504,25 @@ Module.register("noaacurrent", {
         });
     },
 
-	createMainDataStructure: function(data){
-		data.main = {};
-		now = new Date();
+    createMainDataStructure: function(data){
+        data.main = {};
+        now = new Date();
 
-		data.main.temp = this.findLatest(data.properties.temperature.values);
-		data.main.humidity = this.findLatest(data.properties.relativeHumidity.values);
-		data.main.feelsLike = this.findLatest(data.properties.apparentTemperature.values);
-		data.main.windSpeed = this.findLatest(data.properties.windSpeed.values);
-		data.main.windDeg = this.findLatest(data.properties.windDirection.values);
-	},
+        data.main.temp = this.findLatest(data.properties.temperature.values);
+        data.main.humidity = this.findLatest(data.properties.relativeHumidity.values);
+        data.main.feelsLike = this.findLatest(data.properties.apparentTemperature.values);
+        data.main.windSpeed = this.findLatest(data.properties.windSpeed.values);
+        data.main.windDeg = this.findLatest(data.properties.windDirection.values);
+    },
 
     processSunrise: function(data){
         var now = new Date();
         var sunrise = Date.parse(data.results.sunrise);
         var sunset = Date.parse(data.results.sunset);
 
-        Log.log("Sunrise: " + sunrise + ", sunset: " + sunset);
+        this.sunriseData = {sunrise: sunrise, sunset: sunset, data: data};
+
+        // Log.log("Sunrise: " + sunrise + ", sunset: " + sunset + "\n\nData: " + JSON.stringify(this.sunriseData));
 
         // The moment().format('h') method has a bug on the Raspberry Pi.
         // So we need to generate the timestring manually.
@@ -471,116 +547,123 @@ Module.register("noaacurrent", {
 
         this.sunriseSunsetTime = timeString;
         this.sunriseSunsetIcon = sunrise < now && sunset > now ? "wi-sunset" : "wi-sunrise";
-        this.sendNotification("NOAAWEATHER_SUNRISE_DATA", { data: data });
+        this.sendNotification(this.NOTIFICATION_SUNRISE_DATA.toString(), { data: data });
     },
 
-	/* processWeather(data)
-	 * Uses the received data to set the various values.
-	 *
-	 * argument data object - Weather information received form openweather.org.
-	 */
-	processWeather: function (data, hourlyData, officeData) {
-		this.createMainDataStructure(data);
+    /* processWeather(data)
+     * Uses the received data to set the various values.
+     *
+     * argument data object - Weather information received form openweather.org.
+     */
+    processWeather: function (data, hourlyData, officeData) {
+        this.createMainDataStructure(data);
 
-		if (!data || !data.main || typeof data.main.temp === "undefined") {
-			// Did not receive usable new data.
-			// Maybe this needs a better check?
-			return;
-		}
+        if (!data || !data.main || typeof data.main.temp === "undefined") {
+            // Did not receive usable new data.
+            // Maybe this needs a better check?
+            return;
+        }
 
-		this.humidity = parseFloat(data.main.humidity);
-		this.temperature = this.roundValue(this.c2f(data.main.temp));
-		this.feelsLike = this.roundValue(this.c2f(data.main.feelsLike));
-		this.windSpeed = parseFloat(this.ms2Beaufort(data.main.windSpeed)).toFixed(0);
-		this.windDirection = this.deg2Cardinal(data.main.windDeg);
-		this.windDeg = data.main.windDeg;
+        this.humidity = parseFloat(data.main.humidity);
+        this.temperature = this.roundValue(this.c2f(data.main.temp));
+        this.feelsLike = this.roundValue(this.c2f(data.main.feelsLike));
+        this.windSpeed = parseFloat(this.ms2Beaufort(data.main.windSpeed)).toFixed(0);
+        this.windDirection = this.deg2Cardinal(data.main.windDeg);
+        this.windDeg = data.main.windDeg;
+
+        this.currentData = data;
+        this.hourlyData = hourlyData;
+        this.officeData = officeData;
 
         var citystate = officeData.properties.relativeLocation.properties;
         this.fetchedLocationName = citystate.city + ", " + citystate.state;
 
 
-		this.weatherType = this.findMatchingTime(hourlyData.properties.periods).icon;
+        this.weatherType = this.findMatchingTime(hourlyData.properties.periods).icon;
 
-		this.show(this.config.animationSpeed, { lockString: this.identifier });
-		this.loaded = true;
-		this.updateDom(this.config.animationSpeed);
+        this.loaded = true;
+        // Log.log("Sunrise data: " + JSON.stringify(this.sunriseData));
 
-		this.sendNotification("NOAAWEATHER_CURRENT_DATA", { data: data });
-        this.sendNotification("NOAAWEATHER_HOURLY_DATA", { data: data });
-	},
+        this.show(this.config.animationSpeed, { lockString: this.identifier });
+        this.updateDom(this.config.animationSpeed);
+
+        this.sendNotification(this.NOTIFICATION_GRIDPOINT_DATA.toString(), { data: officeData });
+        this.sendNotification(this.NOTIFICATION_CURRENT_DATA.toString(), { data: data });
+        this.sendNotification(this.NOTIFICATION_HOURLY_DATA.toString(), { hourly: hourlyData, current: data });
+    },
 
     c2f: function(c){
         return 1.8*c+32;
     },
 
-	/* ms2Beaufort(ms)
-	 * Converts m2 to beaufort (windspeed).
-	 *
-	 * see:
-	 *  https://www.spc.noaa.gov/faq/tornado/beaufort.html
-	 *  https://en.wikipedia.org/wiki/Beaufort_scale#Modern_scale
-	 *
-	 * argument ms number - Windspeed in m/s.
-	 *
-	 * return number - Windspeed in beaufort.
-	 */
-	ms2Beaufort: function (ms) {
-		var kmh = (ms * 60 * 60) / 1000;
-		var speeds = [1, 5, 11, 19, 28, 38, 49, 61, 74, 88, 102, 117, 1000];
-		for (var beaufort in speeds) {
-			var speed = speeds[beaufort];
-			if (speed > kmh) {
-				return beaufort;
-			}
-		}
-		return 12;
-	},
+    /* ms2Beaufort(ms)
+     * Converts m2 to beaufort (windspeed).
+     *
+     * see:
+     *  https://www.spc.noaa.gov/faq/tornado/beaufort.html
+     *  https://en.wikipedia.org/wiki/Beaufort_scale#Modern_scale
+     *
+     * argument ms number - Windspeed in m/s.
+     *
+     * return number - Windspeed in beaufort.
+     */
+    ms2Beaufort: function (ms) {
+        var kmh = (ms * 60 * 60) / 1000;
+        var speeds = [1, 5, 11, 19, 28, 38, 49, 61, 74, 88, 102, 117, 1000];
+        for (var beaufort in speeds) {
+            var speed = speeds[beaufort];
+            if (speed > kmh) {
+                return beaufort;
+            }
+        }
+        return 12;
+    },
 
-	deg2Cardinal: function (deg) {
-		if (deg > 11.25 && deg <= 33.75) {
-			return "NNE";
-		} else if (deg > 33.75 && deg <= 56.25) {
-			return "NE";
-		} else if (deg > 56.25 && deg <= 78.75) {
-			return "ENE";
-		} else if (deg > 78.75 && deg <= 101.25) {
-			return "E";
-		} else if (deg > 101.25 && deg <= 123.75) {
-			return "ESE";
-		} else if (deg > 123.75 && deg <= 146.25) {
-			return "SE";
-		} else if (deg > 146.25 && deg <= 168.75) {
-			return "SSE";
-		} else if (deg > 168.75 && deg <= 191.25) {
-			return "S";
-		} else if (deg > 191.25 && deg <= 213.75) {
-			return "SSW";
-		} else if (deg > 213.75 && deg <= 236.25) {
-			return "SW";
-		} else if (deg > 236.25 && deg <= 258.75) {
-			return "WSW";
-		} else if (deg > 258.75 && deg <= 281.25) {
-			return "W";
-		} else if (deg > 281.25 && deg <= 303.75) {
-			return "WNW";
-		} else if (deg > 303.75 && deg <= 326.25) {
-			return "NW";
-		} else if (deg > 326.25 && deg <= 348.75) {
-			return "NNW";
-		} else {
-			return "N";
-		}
-	},
+    deg2Cardinal: function (deg) {
+        if (deg > 11.25 && deg <= 33.75) {
+            return "NNE";
+        } else if (deg > 33.75 && deg <= 56.25) {
+            return "NE";
+        } else if (deg > 56.25 && deg <= 78.75) {
+            return "ENE";
+        } else if (deg > 78.75 && deg <= 101.25) {
+            return "E";
+        } else if (deg > 101.25 && deg <= 123.75) {
+            return "ESE";
+        } else if (deg > 123.75 && deg <= 146.25) {
+            return "SE";
+        } else if (deg > 146.25 && deg <= 168.75) {
+            return "SSE";
+        } else if (deg > 168.75 && deg <= 191.25) {
+            return "S";
+        } else if (deg > 191.25 && deg <= 213.75) {
+            return "SSW";
+        } else if (deg > 213.75 && deg <= 236.25) {
+            return "SW";
+        } else if (deg > 236.25 && deg <= 258.75) {
+            return "WSW";
+        } else if (deg > 258.75 && deg <= 281.25) {
+            return "W";
+        } else if (deg > 281.25 && deg <= 303.75) {
+            return "WNW";
+        } else if (deg > 303.75 && deg <= 326.25) {
+            return "NW";
+        } else if (deg > 326.25 && deg <= 348.75) {
+            return "NNW";
+        } else {
+            return "N";
+        }
+    },
 
-	/* function(temperature)
-	 * Rounds a temperature to 1 decimal or integer (depending on config.roundTemp).
-	 *
-	 * argument temperature number - Temperature.
-	 *
-	 * return string - Rounded Temperature.
-	 */
-	roundValue: function (temperature) {
-		var decimals = this.config.roundTemp ? 0 : 1;
-		return parseFloat(temperature).toFixed(decimals);
-	}
+    /* function(temperature)
+     * Rounds a temperature to 1 decimal or integer (depending on config.roundTemp).
+     *
+     * argument temperature number - Temperature.
+     *
+     * return string - Rounded Temperature.
+     */
+    roundValue: function (temperature) {
+        var decimals = this.config.roundTemp ? 0 : 1;
+        return parseFloat(temperature).toFixed(decimals);
+    }
 });

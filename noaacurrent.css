@@ -1,15 +1,15 @@
-.currentweather .weathericon,
-.currentweather .fa-home {
+.noaacurrent .weathericon,
+.noaacurrent .fa-home {
   font-size: 75%;
   line-height: 65px;
   display: inline-block;
   transform: translate(0, -3px);
 }
 
-.currentweather .humidityIcon {
+.noaacurrent .humidityIcon {
   padding-right: 4px;
 }
 
-.currentweather .humidity-padding {
+.noaacurrent .humidity-padding {
   padding-bottom: 6px;
 }
