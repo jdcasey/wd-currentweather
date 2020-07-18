@@ -9,8 +9,10 @@
 Module.register("noaacurrent", {
     // Default module config.
     defaults: {
-        lat: 0,
-        lon: 0,
+        lat: config.lat,
+        lon: config.lon,
+        notificationsOnly: false,
+
         units: config.units,
         updateInterval: 10 * 60 * 1000, // every 10 minutes
         animationSpeed: 1000,
@@ -47,7 +49,6 @@ Module.register("noaacurrent", {
     },
 
     NOTIFICATION_GRIDPOINT_DATA: "NOAAWEATHER_GRIDPOINT_DATA",
-    NOTIFICATION_SUNRISE_DATA: "NOAAWEATHER_SUNRISE_DATA",
     NOTIFICATION_CURRENT_DATA: "NOAAWEATHER_CURRENT_DATA",
     NOTIFICATION_HOURLY_DATA: "NOAAWEATHER_HOURLY_DATA",
 
@@ -60,7 +61,7 @@ Module.register("noaacurrent", {
 
     // Define required scripts.
     getScripts: function () {
-        return ["moment.js"];
+        return ["moment.js", 'suncalc.js'];
     },
 
     // Define required scripts.
@@ -92,13 +93,17 @@ Module.register("noaacurrent", {
         this.indoorTemperature = null;
         this.indoorHumidity = null;
         this.weatherType = null;
-        this.sunriseData = {};
         this.feelsLike = null;
         this.loaded = false;
+
         this.officeData = null;
         this.sunriseData = null;
+        this.currentData = null;
 
-        this.scheduleUpdate(this.config.initialLoadDelay);
+        if ( !config.notificationsOnly ){
+            Log.log("Scheduling data-loading");
+            this.scheduleUpdate(this.config.initialLoadDelay);
+        }
     },
 
     classifyWeather: (sunriseData, weatherType)=>{
@@ -337,33 +342,66 @@ Module.register("noaacurrent", {
 
     // Override notification handler.
     notificationReceived: function (notification, payload, sender) {
-        if (notification === "DOM_OBJECTS_CREATED") {
-            if (this.config.appendLocationNameToHeader) {
-                this.hide(0, { lockString: this.identifier });
-            }
-        }
-        if (notification === "CALENDAR_EVENTS") {
-            var senderClasses = sender.data.classes.toLowerCase().split(" ");
-            if (senderClasses.indexOf(this.config.calendarClass.toLowerCase()) !== -1) {
-                this.firstEvent = false;
+        switch(notification){
+            case "DOM_OBJECTS_CREATED":
+                if (this.config.appendLocationNameToHeader) {
+                    this.hide(0, { lockString: this.identifier });
+                }
+                break;
 
-                for (var e in payload) {
-                    var event = payload[e];
-                    if (event.location || event.geo) {
-                        this.firstEvent = event;
-                        //Log.log("First upcoming event with location: ", event);
-                        break;
+            case "CALENDAR_EVENTS":
+                var senderClasses = sender.data.classes.toLowerCase().split(" ");
+                if (senderClasses.indexOf(this.config.calendarClass.toLowerCase()) !== -1) {
+                    this.firstEvent = false;
+
+                    for (var e in payload) {
+                        var event = payload[e];
+                        if (event.location || event.geo) {
+                            this.firstEvent = event;
+                            //Log.log("First upcoming event with location: ", event);
+                            break;
+                        }
                     }
                 }
-            }
-        }
-        if (notification === "INDOOR_TEMPERATURE") {
-            this.indoorTemperature = this.roundValue(payload);
-            this.updateDom(this.config.animationSpeed);
-        }
-        if (notification === "INDOOR_HUMIDITY") {
-            this.indoorHumidity = this.roundValue(payload);
-            this.updateDom(this.config.animationSpeed);
+                break;
+
+            case "INDOOR_TEMPERATURE":
+                this.indoorTemperature = this.roundValue(payload);
+                this.updateDom(this.config.animationSpeed);
+                break;
+
+            case "INDOOR_HUMIDITY":
+                this.indoorHumidity = this.roundValue(payload);
+                this.updateDom(this.config.animationSpeed);
+                break;
+
+            case "NOAAWEATHER_GRIDPOINT_DATA":
+                this.officeData = payload;
+                Log.log("RECV: " + notification);
+                if ( this.officeData != null && this.currentData != null && this.hourlyData != null ){
+                    Log.log("Looks like we have all we need to process the weather!");
+                    this.processWeather();
+                }
+                break;
+
+            case "NOAAWEATHER_HOURLY_DATA":
+                this.hourlyData = payload;
+                Log.log("RECV: " + notification);
+                if ( this.officeData != null && this.currentData != null && this.hourlyData != null ){
+                    Log.log("Looks like we have all we need to process the weather!");
+                    this.processWeather();
+                }
+                break;
+
+            case "NOAAWEATHER_CURRENT_DATA":
+                this.currentData = payload;
+                Log.log("RECV: " + notification);
+                if ( this.officeData != null && this.currentData != null && this.hourlyData != null ){
+                    Log.log("Looks like we have all we need to process the weather!");
+                    this.processWeather();
+                }
+                break;
+
         }
     },
 
@@ -405,53 +443,47 @@ Module.register("noaacurrent", {
      * Requests new data from openweather.org.
      * Calls processWeather on succesfull response.
      */
-    updateWeather: function (officeData) {
-        Log.log("Looking up current conditions from office URL: " + officeData.properties.forecastGridData);
+    updateWeather: function () {
+        if ( this.config.notificationsOnly ){
+            Log.log("Notification-only mode; waiting for notifications from another noaa module.");
+            return;
+        }
 
-        var url = officeData.properties.forecastGridData;
+
         var self = this;
-        var retry = true;
-        var currentConditions = {};
 
-        this.makeRequest("GET", url, self).then((response)=>{
-            currentConditions = response;
-            return self.makeRequest("GET", officeData.properties.forecastHourly, self);
+        Log.log("Looking up current conditions from office URL: " + this.officeData.properties.forecastGridData);
+        this.makeRequest("GET", this.officeData.properties.forecastGridData, self).then((response)=>{
+            this.currentData = response;
+
+            Log.log("Looking up hourly forecast from office URL: " + self.officeData.properties.forecastHourly);
+            return self.makeRequest("GET", this.officeData.properties.forecastHourly, self);
         }).then((response)=>{
-            self.processWeather(currentConditions, response, officeData);
+            this.hourlyData = response;
+            self.processWeather();
         });
     },
 
     updateOfficeWeather: function(){
+        if ( this.config.notificationsOnly ){
+            Log.log("Notification-only mode; waiting for notifications from another noaa module.");
+            return;
+        }
         // Log.log("Looking up NOAA weather by lat/long");
 
         var url = this.config.apiBase + '/points/' + this.config.lat + "," + this.config.lon;
         var self = this;
-        var officeData = {};
 
         Log.log("Retrieving gridpoint information from: '" + url + "'");
         var officePromise = this.makeRequest("GET", url, self)
                                 .then(function(response){
-                                    officeData = response;
+                                    self.officeData = response;
+                                    self.updateWeather();
                                 })
                                 .catch(function(err){
                                     self.updateDom(self.config.animationSpeed);
                                     Log.error("Failed to load NOAA office information for Lat/Lon: " + self.config.lat + "," + self.config.lon + ": " + err.status);
                                 });
-
-        var sunriseUrl = "https://api.sunrise-sunset.org/json?lat=" + this.config.lat + "&lng=" + this.config.lon + "&formatted=0";
-        Log.log("Retrieving sunrise information from: '" + url + "'");
-        var sunrisePromise = this.makeRequest("GET", sunriseUrl, self)
-                                .then(function(response){
-                                    self.processSunrise(response);
-                                })
-                                .catch(function(err){
-                                    Log.error("Failed to load sunrise/sunset information for Lat/Lon: " + self.config.lat + "," + self.config.lon + ": " + err.err);
-                                });
-
-        Promise.all([officePromise, sunrisePromise]).then((values)=>{
-            // Log.log("All prelim promises done, with values: " + values);
-            self.updateWeather(officeData);
-        })
     },
 
     /* scheduleUpdate()
@@ -515,19 +547,18 @@ Module.register("noaacurrent", {
         data.main.windDeg = this.findLatest(data.properties.windDirection.values);
     },
 
-    processSunrise: function(data){
+    processSunrise: function(){
         var now = new Date();
-        var sunrise = Date.parse(data.results.sunrise);
-        var sunset = Date.parse(data.results.sunset);
+        var sunTimes = SunCalc.getTimes(now, this.config.lat, this.config.lon);
 
-        this.sunriseData = {sunrise: sunrise, sunset: sunset, data: data};
+        this.sunriseData = sunTimes;
 
         // Log.log("Sunrise: " + sunrise + ", sunset: " + sunset + "\n\nData: " + JSON.stringify(this.sunriseData));
 
         // The moment().format('h') method has a bug on the Raspberry Pi.
         // So we need to generate the timestring manually.
         // See issue: https://github.com/MichMich/MagicMirror/issues/181
-        var sunriseSunsetDateObject = sunrise < now && sunset > now ? sunset : sunrise;
+        var sunriseSunsetDateObject = sunTimes.sunrise < now && sunTimes.sunset > now ? sunTimes.sunset : sunTimes.sunrise;
         var timeString = moment(sunriseSunsetDateObject).format("HH:mm");
         if (this.config.timeFormat !== 24) {
          //var hours = sunriseSunsetDateObject.getHours() % 12 || 12;
@@ -546,8 +577,7 @@ Module.register("noaacurrent", {
         }
 
         this.sunriseSunsetTime = timeString;
-        this.sunriseSunsetIcon = sunrise < now && sunset > now ? "wi-sunset" : "wi-sunrise";
-        this.sendNotification(this.NOTIFICATION_SUNRISE_DATA.toString(), { data: data });
+        this.sunriseSunsetIcon = sunTimes.sunrise < now && sunTimes.sunset > now ? "wi-sunset" : "wi-sunrise";
     },
 
     /* processWeather(data)
@@ -556,6 +586,16 @@ Module.register("noaacurrent", {
      * argument data object - Weather information received form openweather.org.
      */
     processWeather: function (data, hourlyData, officeData) {
+        if ( this.officeData == null || this.currentData == null || this.hourlyData == null ){
+            Log.log("We don't have all the information needed for a weather update yet. Waiting...");
+        }
+
+        this.processSunrise();
+
+        var data = this.currentData;
+        var hourlyData = this.hourlyData;
+        var officeData = this.officeData;
+
         this.createMainDataStructure(data);
 
         if (!data || !data.main || typeof data.main.temp === "undefined") {
@@ -587,9 +627,11 @@ Module.register("noaacurrent", {
         this.show(this.config.animationSpeed, { lockString: this.identifier });
         this.updateDom(this.config.animationSpeed);
 
-        this.sendNotification(this.NOTIFICATION_GRIDPOINT_DATA.toString(), { data: officeData });
-        this.sendNotification(this.NOTIFICATION_CURRENT_DATA.toString(), { data: data });
-        this.sendNotification(this.NOTIFICATION_HOURLY_DATA.toString(), { hourly: hourlyData, current: data });
+        if ( !this.config.notificationsOnly ){
+            this.sendNotification(this.NOTIFICATION_GRIDPOINT_DATA.toString(), officeData);
+            this.sendNotification(this.NOTIFICATION_CURRENT_DATA.toString(), data);
+            this.sendNotification(this.NOTIFICATION_HOURLY_DATA.toString(), hourlyData);
+        }
     },
 
     c2f: function(c){
