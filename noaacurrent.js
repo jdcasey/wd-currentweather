@@ -502,17 +502,18 @@ Module.register("noaacurrent", {
     },
 
     findLatest: function(measurements){
-        var latest = null;
-        var now = new Date();
-
-        measurements.forEach(measurement=>{
-            var mdate = Date.parse(measurement.validTime.split('/')[0])
-            if ( now > mdate ){
-                latest = measurement.value;
-            }
-        });
-
-        return latest;
+      return measurements[0].value;
+        // var latest = null;
+        // var now = new Date();
+        //
+        // measurements.forEach(measurement=>{
+        //     var mdate = Date.parse(measurement.validTime.split('/')[0])
+        //     if ( now > mdate ){
+        //         latest = measurement.value;
+        //     }
+        // });
+        //
+        // return latest;
     },
 
     findMatchingTime: (measurements)=>{
