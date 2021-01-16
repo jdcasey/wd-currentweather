@@ -11,8 +11,6 @@ Module.register("noaacurrent", {
     defaults: {
         lat: config.lat,
         lon: config.lon,
-        notificationsOnly: false,
-
         units: config.units,
         updateInterval: 10 * 60 * 1000, // every 10 minutes
         animationSpeed: 1000,
@@ -99,11 +97,6 @@ Module.register("noaacurrent", {
         this.officeData = null;
         this.sunriseData = null;
         this.currentData = null;
-
-        if ( !config.notificationsOnly ){
-            Log.log("Scheduling data-loading");
-            this.scheduleUpdate(this.config.initialLoadDelay);
-        }
     },
 
     classifyWeather: (sunriseData, weatherType)=>{
@@ -381,12 +374,6 @@ Module.register("noaacurrent", {
                 this.processWeather();
                 break;
 
-            case "NOAAWEATHER_HOURLY_DATA":
-                this.hourlyData = payload;
-                Log.log("RECV: " + notification);
-                this.processWeather();
-                break;
-
             case "NOAAWEATHER_CURRENT_DATA":
                 this.currentData = payload;
                 Log.log("RECV: " + notification);
@@ -394,126 +381,6 @@ Module.register("noaacurrent", {
                 break;
 
         }
-    },
-
-    makeRequest: function(method, url, self){
-        return new Promise(function(resolve, reject){
-            var request = new XMLHttpRequest();
-            request.open(method, url, true);
-
-            request.onload = function () {
-                if ( this.status === 200 ){
-                    resolve(JSON.parse(request.response));
-                }
-                else{
-                    self.scheduleUpdate(self.loaded ? -1 : self.config.retryDelay);
-
-                    Log.error("Error calling " + url + ": " + this.status + " " + request.statusText );
-                    reject({
-                        status: this.status,
-                        statusText: request.statusText
-                    });
-                }
-            };
-
-            request.onerror = function(err){
-                self.scheduleUpdate(self.loaded ? -1 : self.config.retryDelay);
-                Log.error("Error calling " + url + ": " + err )
-                reject({
-                    status: this.status,
-                    statusText: request.statusText,
-                    err: err,
-                });
-            };
-
-            request.send();
-        });
-    },
-
-    /* updateWeather(compliments)
-     * Requests new data from openweather.org.
-     * Calls processWeather on succesfull response.
-     */
-    updateWeather: function () {
-        if ( this.config.notificationsOnly ){
-            Log.log("Notification-only mode; waiting for notifications from another noaa module.");
-            return;
-        }
-
-
-        var self = this;
-
-        Log.log("Looking up current conditions from office URL: " + this.officeData.properties.forecastGridData);
-        this.makeRequest("GET", this.officeData.properties.forecastGridData, self).then((response)=>{
-            this.currentData = response;
-
-            Log.log("Looking up hourly forecast from office URL: " + self.officeData.properties.forecastHourly);
-            return self.makeRequest("GET", this.officeData.properties.forecastHourly, self);
-        }).then((response)=>{
-            this.hourlyData = response;
-            self.processWeather();
-        });
-    },
-
-    updateOfficeWeather: function(){
-        if ( this.config.notificationsOnly ){
-            Log.log("Notification-only mode; waiting for notifications from another noaa module.");
-            return;
-        }
-        // Log.log("Looking up NOAA weather by lat/long");
-
-        var url = this.config.apiBase + '/points/' + this.config.lat + "," + this.config.lon;
-        var self = this;
-
-        Log.log("Retrieving gridpoint information from: '" + url + "'");
-        var officePromise = this.makeRequest("GET", url, self)
-                                .then(function(response){
-                                    self.officeData = response;
-                                    self.updateWeather();
-                                })
-                                .catch(function(err){
-                                    self.updateDom(self.config.animationSpeed);
-                                    Log.error("Failed to load NOAA office information for Lat/Lon: " + self.config.lat + "," + self.config.lon + ": " + err.status);
-                                });
-    },
-
-    /* scheduleUpdate()
-     * Schedule next update.
-     *
-     * argument delay number - Milliseconds before next update. If empty, this.config.updateInterval is used.
-     */
-    scheduleUpdate: function (delay) {
-      if ( !this.config.notificationsOnly ){
-        Log.log("This service only consumes from noaanotifier. NOT scheduling update.");
-        return;
-      }
-
-      var nextLoad = this.config.updateInterval;
-      if (typeof delay !== "undefined" && delay >= 0) {
-          nextLoad = delay;
-      }
-
-      // Log.log("Scheduling update for weather at " + nextLoad);
-
-      var self = this;
-      setTimeout(function () {
-          self.updateOfficeWeather();
-      }, nextLoad);
-    },
-
-    findLatest: function(measurements){
-      return measurements[0].value;
-        // var latest = null;
-        // var now = new Date();
-        //
-        // measurements.forEach(measurement=>{
-        //     var mdate = Date.parse(measurement.validTime.split('/')[0])
-        //     if ( now > mdate ){
-        //         latest = measurement.value;
-        //     }
-        // });
-        //
-        // return latest;
     },
 
     findMatchingTime: (measurements)=>{
@@ -531,17 +398,6 @@ Module.register("noaacurrent", {
 
             return false;
         });
-    },
-
-    createMainDataStructure: function(data){
-        data.main = {};
-        now = new Date();
-
-        data.main.temp = this.findLatest(data.properties.temperature.values);
-        data.main.humidity = this.findLatest(data.properties.relativeHumidity.values);
-        data.main.feelsLike = this.findLatest(data.properties.apparentTemperature.values);
-        data.main.windSpeed = this.findLatest(data.properties.windSpeed.values);
-        data.main.windDeg = this.findLatest(data.properties.windDirection.values);
     },
 
     processSunrise: function(){
@@ -583,7 +439,7 @@ Module.register("noaacurrent", {
      * argument data object - Weather information received form openweather.org.
      */
     processWeather: function () {
-        if ( this.officeData == null || this.currentData == null || this.hourlyData == null ){
+        if ( this.officeData == null || this.currentData == null ){
             Log.log("We don't have all the information needed for a weather update yet. Waiting...");
             return;
         }
@@ -591,40 +447,31 @@ Module.register("noaacurrent", {
         this.processSunrise();
 
         var data = this.currentData;
-        var hourlyData = this.hourlyData;
         var officeData = this.officeData;
 
-        this.createMainDataStructure(data);
-
-        if (!data || !data.main || typeof data.main.temp === "undefined") {
+        if (!data || typeof data.temp === "undefined") {
             // Did not receive usable new data.
             // Maybe this needs a better check?
             return;
         }
 
-        this.humidity = parseFloat(data.main.humidity);
-        this.temperature = this.roundValue(this.c2f(data.main.temp));
-        this.feelsLike = this.roundValue(this.c2f(data.main.feelsLike));
-        this.windSpeed = parseFloat(this.ms2Beaufort(data.main.windSpeed)).toFixed(0);
-        this.windDirection = this.deg2Cardinal(data.main.windDeg);
-        this.windDeg = data.main.windDeg;
+        this.humidity = this.roundValue(parseFloat(data.humidity));
+        this.temperature = this.roundValue(this.c2f(data.temp));
+        this.feelsLike = this.roundValue(this.c2f(data.feelsLike));
+        this.windSpeed = parseFloat(this.ms2Beaufort(data.windSpeed)).toFixed(0);
+        this.windDirection = this.deg2Cardinal(data.windDeg);
+        this.windDeg = data.windDeg;
 
         var citystate = officeData.properties.relativeLocation.properties;
         this.fetchedLocationName = citystate.city + ", " + citystate.state;
 
-        this.weatherType = this.findMatchingTime(hourlyData.properties.periods).icon;
+        this.weatherType = data.weatherIcon;
 
         this.loaded = true;
         // Log.log("Sunrise data: " + JSON.stringify(this.sunriseData));
 
         this.show(this.config.animationSpeed, { lockString: this.identifier });
         this.updateDom(this.config.animationSpeed);
-
-        if ( !this.config.notificationsOnly ){
-            this.sendNotification(this.NOTIFICATION_GRIDPOINT_DATA.toString(), officeData);
-            this.sendNotification(this.NOTIFICATION_CURRENT_DATA.toString(), data);
-            this.sendNotification(this.NOTIFICATION_HOURLY_DATA.toString(), hourlyData);
-        }
     },
 
     c2f: function(c){
