@@ -2,7 +2,7 @@
  * Module: NOAACurrent
  * By John Casey https://github.com/jdcasey
  *
- * Based on Module: CurrentWeather, 
+ * Based on Module: CurrentWeather,
  * By Michael Teeuw https://michaelteeuw.nl
  * MIT Licensed.
  */
@@ -378,28 +378,19 @@ Module.register("noaacurrent", {
             case "NOAAWEATHER_GRIDPOINT_DATA":
                 this.officeData = payload;
                 Log.log("RECV: " + notification);
-                if ( this.officeData != null && this.currentData != null && this.hourlyData != null ){
-                    Log.log("Looks like we have all we need to process the weather!");
-                    this.processWeather();
-                }
+                this.processWeather();
                 break;
 
             case "NOAAWEATHER_HOURLY_DATA":
                 this.hourlyData = payload;
                 Log.log("RECV: " + notification);
-                if ( this.officeData != null && this.currentData != null && this.hourlyData != null ){
-                    Log.log("Looks like we have all we need to process the weather!");
-                    this.processWeather();
-                }
+                this.processWeather();
                 break;
 
             case "NOAAWEATHER_CURRENT_DATA":
                 this.currentData = payload;
                 Log.log("RECV: " + notification);
-                if ( this.officeData != null && this.currentData != null && this.hourlyData != null ){
-                    Log.log("Looks like we have all we need to process the weather!");
-                    this.processWeather();
-                }
+                this.processWeather();
                 break;
 
         }
@@ -492,17 +483,22 @@ Module.register("noaacurrent", {
      * argument delay number - Milliseconds before next update. If empty, this.config.updateInterval is used.
      */
     scheduleUpdate: function (delay) {
-        var nextLoad = this.config.updateInterval;
-        if (typeof delay !== "undefined" && delay >= 0) {
-            nextLoad = delay;
-        }
+      if ( !this.config.notificationsOnly ){
+        Log.log("This service only consumes from noaanotifier. NOT scheduling update.");
+        return;
+      }
 
-        // Log.log("Scheduling update for weather at " + nextLoad);
+      var nextLoad = this.config.updateInterval;
+      if (typeof delay !== "undefined" && delay >= 0) {
+          nextLoad = delay;
+      }
 
-        var self = this;
-        setTimeout(function () {
-            self.updateOfficeWeather();
-        }, nextLoad);
+      // Log.log("Scheduling update for weather at " + nextLoad);
+
+      var self = this;
+      setTimeout(function () {
+          self.updateOfficeWeather();
+      }, nextLoad);
     },
 
     findLatest: function(measurements){
@@ -585,9 +581,10 @@ Module.register("noaacurrent", {
      *
      * argument data object - Weather information received form openweather.org.
      */
-    processWeather: function (data, hourlyData, officeData) {
+    processWeather: function () {
         if ( this.officeData == null || this.currentData == null || this.hourlyData == null ){
             Log.log("We don't have all the information needed for a weather update yet. Waiting...");
+            return;
         }
 
         this.processSunrise();
@@ -611,13 +608,8 @@ Module.register("noaacurrent", {
         this.windDirection = this.deg2Cardinal(data.main.windDeg);
         this.windDeg = data.main.windDeg;
 
-        this.currentData = data;
-        this.hourlyData = hourlyData;
-        this.officeData = officeData;
-
         var citystate = officeData.properties.relativeLocation.properties;
         this.fetchedLocationName = citystate.city + ", " + citystate.state;
-
 
         this.weatherType = this.findMatchingTime(hourlyData.properties.periods).icon;
 
