@@ -6,7 +6,7 @@
  * By Michael Teeuw https://michaelteeuw.nl
  * MIT Licensed.
  */
-Module.register("noaacurrent", {
+Module.register("wd-currentweather", {
     // Default module config.
     defaults: {
         animationSpeed: 1000,
@@ -41,7 +41,7 @@ Module.register("noaacurrent", {
 
     // Define required scripts.
     getStyles: function () {
-        return ["weather-icons.css", "noaacurrent.css"];
+        return ["weather-icons.css", "wd-currentweather.css"];
     },
 
     // Define required translations.

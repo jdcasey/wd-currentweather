@@ -1,8 +1,4 @@
-# Module: NOAA Current (Weather)
+# Module: Current Weather (WeatherData)
 
-The `noaacurrent` module is based on the `currentweather` module, one of the default modules of the MagicMirror.
-This module displays the current weather from the US National Oceanographic and Atmospheric Agency (NOAA), including the windspeed, the sunset or sunrise time, the temperature and an icon to display the current conditions.
+The `wd-currentweather` module is based on the `currentweather` module, one of the default modules of the MagicMirror. It receives weather data from the [weatherdata](https://github.com/jdcasey/weatherdata) module, which currently draws data from OpenWeatherMaps.org.
 
-It supplements NOAA information with data from https://sunrise-sunset.org in order to provide sunrise / sunset timing.
-
-##TODO: Configuration
