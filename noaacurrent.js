@@ -9,15 +9,11 @@
 Module.register("noaacurrent", {
     // Default module config.
     defaults: {
-        lat: config.lat,
-        lon: config.lon,
-        units: config.units,
-        updateInterval: 10 * 60 * 1000, // every 10 minutes
         animationSpeed: 1000,
         timeFormat: config.timeFormat,
         lang: config.language,
         decimalSymbol: ".",
-        degreeLabel: false,
+        degreeLabel: true,
 
         showPeriod: true,
         showPeriodUpper: false,
@@ -25,19 +21,8 @@ Module.register("noaacurrent", {
         showWindDirectionAsArrow: false,
         showHumidity: true,
         showSun: true,
-        showIndoorTemperature: false,
-        showIndoorHumidity: false,
         showFeelsLike: true,
 
-        useBeaufort: false,
-        useKMPHwind: true,
-
-        initialLoadDelay: 0, // 0 seconds delay
-        retryDelay: 2500,
-
-        apiBase: "https://api.weather.gov",
-
-        appendLocationNameToHeader: true,
         calendarClass: "calendar",
         tableClass: "large",
 
@@ -46,20 +31,12 @@ Module.register("noaacurrent", {
         roundTemp: false,
     },
 
-    NOTIFICATION_GRIDPOINT_DATA: "NOAAWEATHER_GRIDPOINT_DATA",
-    NOTIFICATION_CURRENT_DATA: "NOAAWEATHER_CURRENT_DATA",
-    NOTIFICATION_HOURLY_DATA: "NOAAWEATHER_HOURLY_DATA",
-
-
     // create a variable for the first upcoming calendar event. Used if no location is specified.
     firstEvent: false,
 
-    // create a variable to hold the location name based on the API result.
-    fetchedLocationName: "",
-
     // Define required scripts.
     getScripts: function () {
-        return ["moment.js", 'suncalc.js'];
+        return ["moment.js"];
     },
 
     // Define required scripts.
@@ -88,80 +65,11 @@ Module.register("noaacurrent", {
         this.sunriseSunsetTime = null;
         this.sunriseSunsetIcon = null;
         this.temperature = null;
-        this.indoorTemperature = null;
-        this.indoorHumidity = null;
         this.weatherType = null;
         this.feelsLike = null;
         this.loaded = false;
 
-        this.officeData = null;
-        this.sunriseData = null;
-        this.currentData = null;
-    },
-
-    classifyWeather: (sunriseData, weatherType)=>{
-        var classifier = weatherType.split("/");
-        classifier = classifier[classifier.length-1].split("?")[0].split(",")[0];
-
-        var now = new Date().getTime();
-        var prefix = sunriseData['sunrise'] == null || (now < sunriseData.sunset && now >= sunriseData.sunrise ) ? "wi-day" : "wi-night";
-
-        // Log.log("Weather classifier is: " + classifier);
-
-        var conditions = {
-            "skc": "sunny",
-            "few": "sunny",
-            "sct": "sunny-overcast",
-            "bkn": "sunny-overcast",
-            "ovc": "cloudy",
-            "wind_skc": "windy",
-            "wind_few": "windy",
-            "wind_sct": "cloudy-windy",
-            "wind_bkn": "cloudy-windy",
-            "wind_ovc": "cloudy-windy",
-            "snow": "snow",
-            "rain_snow": "rain-mix",
-            "rain_sleet": "sleet",
-            "snow_sleet": "sleet",
-            "fzra": "rain-mix",
-            "rain_fzra": "rain-mix",
-            "snow_fzra": "rain-mix",
-            "sleet": "sleet",
-            "rain": "rain",
-            "rain_showers": "showers",
-            "rain_showers_hi": "showers",
-            "tsra": "thunderstorm",
-            "tsra_sct": "thunderstorm",
-            "tsra_hi": "thunderstorm",
-            "tornado": "wi-tornado",
-            "hurricane": "wi-hurricane-warning",
-            "tropical_storm": "wi-hurricane",
-            "dust": "wi-dust",
-            "smoke": "wi-smoke",
-            "haze": "wi-haze",
-            "hot": "wi-hot",
-            "cold": "wi-cold",
-            "blizzard": "snow-wind",
-            "fog": "fog",
-        };
-
-        var corrections = {
-            'wi-night-sunny': 'wi-night-clear',
-            'wi-night-sunny-overcast': 'wi-night-partly-cloudy',
-        }
-
-        var condition = conditions[classifier];
-        if ( condition == null ){
-            return prefix;
-        }
-        else if ( condition.startsWith('wi-') ){
-            return condition;
-        }
-        else{
-            var result = prefix + "-" + condition;
-            var corrected = corrections[result];
-            return corrected != null ? corrected : result;
-        }
+        this.weatherData = null;
     },
 
     // add extra information of current weather
@@ -227,12 +135,6 @@ Module.register("noaacurrent", {
         var wrapper = document.createElement("div");
         wrapper.className = this.config.tableClass;
 
-        if (this.config.appid === "") {
-            wrapper.innerHTML = "Please set the correct openweather <i>appid</i> in the config for module: " + this.name + ".";
-            wrapper.className = "dimmed light small";
-            return wrapper;
-        }
-
         if (!this.loaded) {
             wrapper.innerHTML = this.translate("LOADING");
             wrapper.className = "dimmed light small";
@@ -247,11 +149,11 @@ Module.register("noaacurrent", {
         large.className = "light";
 
         var degreeLabel = "";
-        if (this.config.units === "metric" || this.config.units === "imperial") {
+        if (this.weatherData.config.units === "metric" || this.weatherData.config.units === "imperial") {
             degreeLabel += "°";
         }
         if (this.config.degreeLabel) {
-            switch (this.config.units) {
+            switch (this.weatherData.config.units) {
                 case "metric":
                     degreeLabel += "C";
                     break;
@@ -269,9 +171,9 @@ Module.register("noaacurrent", {
         }
 
         if (this.config.hideTemp === false && this.loaded == true) {
-            var weatherIconSpan = document.createElement("span");
-            var weatherClass = this.classifyWeather(this.sunriseData, this.weatherType);
-            weatherIconSpan.className = "wi weathericon " + weatherClass;
+            const weatherIconSpan = document.createElement("span");
+            const weatherClass = this.weatherClass;
+            weatherIconSpan.className = "wi weathericon dimmed " + weatherClass;
 
             large.appendChild(weatherIconSpan);
 
@@ -279,28 +181,6 @@ Module.register("noaacurrent", {
             temperature.className = "bright";
             temperature.innerHTML = " " + this.temperature.replace(".", this.config.decimalSymbol) + degreeLabel;
             large.appendChild(temperature);
-        }
-
-        if (this.config.showIndoorTemperature && this.indoorTemperature) {
-            var indoorIcon = document.createElement("span");
-            indoorIcon.className = "fa fa-home";
-            large.appendChild(indoorIcon);
-
-            var indoorTemperatureElem = document.createElement("span");
-            indoorTemperatureElem.className = "bright";
-            indoorTemperatureElem.innerHTML = " " + this.indoorTemperature.replace(".", this.config.decimalSymbol) + degreeLabel;
-            large.appendChild(indoorTemperatureElem);
-        }
-
-        if (this.config.showIndoorHumidity && this.indoorHumidity) {
-            var indoorHumidityIcon = document.createElement("span");
-            indoorHumidityIcon.className = "fa fa-tint";
-            large.appendChild(indoorHumidityIcon);
-
-            var indoorHumidityElem = document.createElement("span");
-            indoorHumidityElem.className = "bright";
-            indoorHumidityElem.innerHTML = " " + this.indoorHumidity + "%";
-            large.appendChild(indoorHumidityElem);
         }
 
         wrapper.appendChild(large);
@@ -322,10 +202,6 @@ Module.register("noaacurrent", {
 
     // Override getHeader method.
     getHeader: function () {
-        if (this.config.appendLocationNameToHeader && this.data.header !== undefined) {
-            return this.data.header + " " + this.fetchedLocationName;
-        }
-
         if (this.config.useLocationAsHeader && this.config.location !== false) {
             return this.config.location;
         }
@@ -342,41 +218,9 @@ Module.register("noaacurrent", {
                 }
                 break;
 
-            case "CALENDAR_EVENTS":
-                var senderClasses = sender.data.classes.toLowerCase().split(" ");
-                if (senderClasses.indexOf(this.config.calendarClass.toLowerCase()) !== -1) {
-                    this.firstEvent = false;
-
-                    for (var e in payload) {
-                        var event = payload[e];
-                        if (event.location || event.geo) {
-                            this.firstEvent = event;
-                            //Log.log("First upcoming event with location: ", event);
-                            break;
-                        }
-                    }
-                }
-                break;
-
-            case "INDOOR_TEMPERATURE":
-                this.indoorTemperature = this.roundValue(payload);
-                this.updateDom(this.config.animationSpeed);
-                break;
-
-            case "INDOOR_HUMIDITY":
-                this.indoorHumidity = this.roundValue(payload);
-                this.updateDom(this.config.animationSpeed);
-                break;
-
-            case "NOAAWEATHER_GRIDPOINT_DATA":
-                this.officeData = payload;
-                Log.log("RECV: " + notification);
-                this.processWeather();
-                break;
-
-            case "NOAAWEATHER_CURRENT_DATA":
-                this.currentData = payload;
-                Log.log("RECV: " + notification);
+            case "WEATHER_REFRESHED":
+                this.weatherData = payload;
+                Log.log("LOG", "Current weather / RECV: " + notification);
                 this.processWeather();
                 break;
 
@@ -401,8 +245,12 @@ Module.register("noaacurrent", {
     },
 
     processSunrise: function(){
-        var now = new Date();
-        var sunTimes = SunCalc.getTimes(now, this.config.lat, this.config.lon);
+        const now = new Date().getTime();
+        const tzOff = this.weatherData.timezone_offset;
+        const sunTimes = {
+          sunrise: (this.weatherData.current.sunrise) * 1000,
+          sunset: (this.weatherData.current.sunset) * 1000,
+        };
 
         this.sunriseData = sunTimes;
 
@@ -439,15 +287,14 @@ Module.register("noaacurrent", {
      * argument data object - Weather information received form openweather.org.
      */
     processWeather: function () {
-        if ( this.officeData == null || this.currentData == null ){
+        if ( this.weatherData == null ){
             Log.log("We don't have all the information needed for a weather update yet. Waiting...");
             return;
         }
 
         this.processSunrise();
 
-        var data = this.currentData;
-        var officeData = this.officeData;
+        var data = this.weatherData.current;
 
         if (!data || typeof data.temp === "undefined") {
             // Did not receive usable new data.
@@ -455,17 +302,14 @@ Module.register("noaacurrent", {
             return;
         }
 
-        this.humidity = this.roundValue(parseFloat(data.humidity));
-        this.temperature = this.roundValue(this.c2f(data.temp));
-        this.feelsLike = this.roundValue(this.c2f(data.feelsLike));
-        this.windSpeed = parseFloat(this.ms2Beaufort(data.windSpeed)).toFixed(0);
-        this.windDirection = this.deg2Cardinal(data.windDeg);
-        this.windDeg = data.windDeg;
+        this.humidity = Math.round(parseFloat(data.humidity));
+        this.temperature = this.roundValue(data.temp);
+        this.feelsLike = this.roundValue(data.feels_like);
+        this.windSpeed = parseFloat(data.wind_speed).toFixed(0);
+        this.windDirection = this.deg2Cardinal(data.wind_deg);
+        this.windDeg = data.wind_deg;
 
-        var citystate = officeData.properties.relativeLocation.properties;
-        this.fetchedLocationName = citystate.city + ", " + citystate.state;
-
-        this.weatherType = data.weatherIcon;
+        this.weatherClass = data.weather[0].weatherClass;
 
         this.loaded = true;
         // Log.log("Sunrise data: " + JSON.stringify(this.sunriseData));
@@ -476,29 +320,6 @@ Module.register("noaacurrent", {
 
     c2f: function(c){
         return 1.8*c+32;
-    },
-
-    /* ms2Beaufort(ms)
-     * Converts m2 to beaufort (windspeed).
-     *
-     * see:
-     *  https://www.spc.noaa.gov/faq/tornado/beaufort.html
-     *  https://en.wikipedia.org/wiki/Beaufort_scale#Modern_scale
-     *
-     * argument ms number - Windspeed in m/s.
-     *
-     * return number - Windspeed in beaufort.
-     */
-    ms2Beaufort: function (ms) {
-        var kmh = (ms * 60 * 60) / 1000;
-        var speeds = [1, 5, 11, 19, 28, 38, 49, 61, 74, 88, 102, 117, 1000];
-        for (var beaufort in speeds) {
-            var speed = speeds[beaufort];
-            if (speed > kmh) {
-                return beaufort;
-            }
-        }
-        return 12;
     },
 
     deg2Cardinal: function (deg) {
