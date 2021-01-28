@@ -13,7 +13,7 @@ Module.register("wd-currentweather", {
         timeFormat: config.timeFormat,
         lang: config.language,
         decimalSymbol: ".",
-        degreeLabel: true,
+        degreeLabel: false,
 
         showPeriod: true,
         showPeriodUpper: false,
@@ -173,13 +173,13 @@ Module.register("wd-currentweather", {
         if (this.config.hideTemp === false && this.loaded == true) {
             const weatherIconSpan = document.createElement("span");
             const weatherClass = this.weatherClass;
-            weatherIconSpan.className = "wi weathericon dimmed " + weatherClass;
+            weatherIconSpan.className = "wi weathericon " + weatherClass;
 
             large.appendChild(weatherIconSpan);
 
             var temperature = document.createElement("span");
             temperature.className = "bright";
-            temperature.innerHTML = " " + this.temperature.replace(".", this.config.decimalSymbol) + degreeLabel;
+            temperature.innerHTML = " " + this.temperature + degreeLabel;
             large.appendChild(temperature);
         }
 
@@ -303,10 +303,10 @@ Module.register("wd-currentweather", {
         }
 
         this.humidity = Math.round(parseFloat(data.humidity));
-        this.temperature = this.roundValue(data.temp);
-        this.feelsLike = this.roundValue(data.feels_like);
-        this.windSpeed = parseFloat(data.wind_speed).toFixed(0);
-        this.windDirection = this.deg2Cardinal(data.wind_deg);
+        this.temperature = Math.round(parseFloat(data.temp));
+        this.feelsLike = Math.round(parseFloat(data.feels_like));
+        this.windSpeed = Math.round(parseFloat(data.wind_speed));
+        this.windDirection = data.windDirection;
         this.windDeg = data.wind_deg;
 
         this.weatherClass = data.weather[0].weatherClass;
@@ -318,55 +318,4 @@ Module.register("wd-currentweather", {
         this.updateDom(this.config.animationSpeed);
     },
 
-    c2f: function(c){
-        return 1.8*c+32;
-    },
-
-    deg2Cardinal: function (deg) {
-        if (deg > 11.25 && deg <= 33.75) {
-            return "NNE";
-        } else if (deg > 33.75 && deg <= 56.25) {
-            return "NE";
-        } else if (deg > 56.25 && deg <= 78.75) {
-            return "ENE";
-        } else if (deg > 78.75 && deg <= 101.25) {
-            return "E";
-        } else if (deg > 101.25 && deg <= 123.75) {
-            return "ESE";
-        } else if (deg > 123.75 && deg <= 146.25) {
-            return "SE";
-        } else if (deg > 146.25 && deg <= 168.75) {
-            return "SSE";
-        } else if (deg > 168.75 && deg <= 191.25) {
-            return "S";
-        } else if (deg > 191.25 && deg <= 213.75) {
-            return "SSW";
-        } else if (deg > 213.75 && deg <= 236.25) {
-            return "SW";
-        } else if (deg > 236.25 && deg <= 258.75) {
-            return "WSW";
-        } else if (deg > 258.75 && deg <= 281.25) {
-            return "W";
-        } else if (deg > 281.25 && deg <= 303.75) {
-            return "WNW";
-        } else if (deg > 303.75 && deg <= 326.25) {
-            return "NW";
-        } else if (deg > 326.25 && deg <= 348.75) {
-            return "NNW";
-        } else {
-            return "N";
-        }
-    },
-
-    /* function(temperature)
-     * Rounds a temperature to 1 decimal or integer (depending on config.roundTemp).
-     *
-     * argument temperature number - Temperature.
-     *
-     * return string - Rounded Temperature.
-     */
-    roundValue: function (temperature) {
-        var decimals = this.config.roundTemp ? 0 : 1;
-        return parseFloat(temperature).toFixed(decimals);
-    }
 });
