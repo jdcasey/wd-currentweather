@@ -149,21 +149,24 @@ Module.register("wd-currentweather", {
         var large = document.createElement("div");
         large.className = "light";
 
-        let degreeLabel += "";
+        let degreeLabel = "";
         let otherTemp = null;
+        let otherFeelsLike = null;
         let nativeUnits = "";
         let otherUnits = "";
 
         if (this.weatherData.config.units === "metric" ){
           degreeLabel += "°";
-          if ( config.showAllTemps === true ){
-            otherTemp = (9*this.temperature)/5 + 32;
+          if ( this.config.showAllTemps === true ){
+            otherTemp = ((9*this.temperature)/5 + 32).toFixed(1);
+            otherFeelsLike = ((9*this.feelsLike)/5 + 32).toFixed(1);
           }
         }
         else if (this.weatherData.config.units === "imperial") {
           degreeLabel += "°";
-          if ( config.showAllTemps === true ){
-            otherTemp = 5*(this.temperature-32)/9;
+          if ( this.config.showAllTemps === true ){
+            otherTemp = (5*(this.temperature-32)/9).toFixed(1);
+            otherFeelsLike = (5*(this.feelsLike-32)/9).toFixed(1);
           }
         }
 
@@ -196,10 +199,10 @@ Module.register("wd-currentweather", {
 
             var temperature = document.createElement("span");
             temperature.className = "bright";
-            temperature.innerHTML = " " + this.temperature + degreeLabel + nativeUnits;
+            temperature.innerHTML = " " + this.temperature + degreeLabel;
 
             if ( otherTemp !== null ) {
-              temperature.innerHTML += " / " + otherTemp + degreeLabel + otherUnits;
+              temperature.innerHTML += nativeUnits + " / " + otherTemp + degreeLabel + otherUnits;
             }
 
             large.appendChild(temperature);
@@ -214,6 +217,10 @@ Module.register("wd-currentweather", {
             var feelsLike = document.createElement("span");
             feelsLike.className = "dimmed";
             feelsLike.innerHTML = this.translate("FEELS") + " " + this.feelsLike + degreeLabel;
+            if ( otherFeelsLike !== null ) {
+              feelsLike.innerHTML += nativeUnits + " / " + otherFeelsLike + degreeLabel + otherUnits;
+            }
+
             small.appendChild(feelsLike);
 
             wrapper.appendChild(small);
