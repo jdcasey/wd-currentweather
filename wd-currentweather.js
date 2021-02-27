@@ -22,6 +22,7 @@ Module.register("wd-currentweather", {
         showHumidity: true,
         showSun: true,
         showFeelsLike: true,
+        showAllTemps: true,
 
         calendarClass: "calendar",
         tableClass: "large",
@@ -148,20 +149,36 @@ Module.register("wd-currentweather", {
         var large = document.createElement("div");
         large.className = "light";
 
-        var degreeLabel = "";
-        if (this.weatherData.config.units === "metric" || this.weatherData.config.units === "imperial") {
-            degreeLabel += "°";
+        let degreeLabel += "";
+        let otherTemp = null;
+        let nativeUnits = "";
+        let otherUnits = "";
+
+        if (this.weatherData.config.units === "metric" ){
+          degreeLabel += "°";
+          if ( config.showAllTemps === true ){
+            otherTemp = (9*this.temperature)/5 + 32;
+          }
         }
-        if (this.config.degreeLabel) {
+        else if (this.weatherData.config.units === "imperial") {
+          degreeLabel += "°";
+          if ( config.showAllTemps === true ){
+            otherTemp = 5*(this.temperature-32)/9;
+          }
+        }
+
+        if (this.config.degreeLabel || otherTemp !== null) {
             switch (this.weatherData.config.units) {
                 case "metric":
-                    degreeLabel += "C";
+                    nativeUnits = "C";
+                    otherUnits = "F";
                     break;
                 case "imperial":
-                    degreeLabel += "F";
+                    nativeUnits = "F";
+                    otherUnits = "C";
                     break;
                 case "default":
-                    degreeLabel += "K";
+                    nativeUnits = "K";
                     break;
             }
         }
@@ -179,7 +196,12 @@ Module.register("wd-currentweather", {
 
             var temperature = document.createElement("span");
             temperature.className = "bright";
-            temperature.innerHTML = " " + this.temperature + degreeLabel;
+            temperature.innerHTML = " " + this.temperature + degreeLabel + nativeUnits;
+
+            if ( otherTemp !== null ) {
+              temperature.innerHTML += " / " + otherTemp + degreeLabel + otherUnits;
+            }
+
             large.appendChild(temperature);
         }
 
