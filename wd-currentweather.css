@@ -13,3 +13,8 @@
 .wd-currentweather .humidity-padding {
   padding-bottom: 6px;
 }
+
+.wd-currentweather .med-large {
+  font-size: 45px;
+  line-height: 45px;
+}

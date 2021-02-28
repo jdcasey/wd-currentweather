@@ -158,15 +158,15 @@ Module.register("wd-currentweather", {
         if (this.weatherData.config.units === "metric" ){
           degreeLabel += "°";
           if ( this.config.showAllTemps === true ){
-            otherTemp = ((9*this.temperature)/5 + 32).toFixed(1);
-            otherFeelsLike = ((9*this.feelsLike)/5 + 32).toFixed(1);
+            otherTemp = Math.round((9*this.temperature)/5 + 32);
+            otherFeelsLike = Math.round((9*this.feelsLike)/5 + 32);
           }
         }
         else if (this.weatherData.config.units === "imperial") {
           degreeLabel += "°";
           if ( this.config.showAllTemps === true ){
-            otherTemp = (5*(this.temperature-32)/9).toFixed(1);
-            otherFeelsLike = (5*(this.feelsLike-32)/9).toFixed(1);
+            otherTemp = Math.round(5*(this.temperature-32)/9);
+            otherFeelsLike = Math.round(5*(this.feelsLike-32)/9);
           }
         }
 
@@ -201,11 +201,18 @@ Module.register("wd-currentweather", {
             temperature.className = "bright";
             temperature.innerHTML = " " + this.temperature + degreeLabel;
 
-            if ( otherTemp !== null ) {
-              temperature.innerHTML += nativeUnits + " / " + otherTemp + degreeLabel + otherUnits;
+            if (this.config.degreeLabel) {
+              temperature.innerHTML += nativeUnits;
             }
 
             large.appendChild(temperature);
+
+            if ( otherTemp !== null ) {
+              const altTemp = document.createElement("span");
+              altTemp.className = "bright med-large";
+              altTemp.innerHTML = " / " + otherTemp + degreeLabel + otherUnits;
+              large.appendChild(altTemp);
+            }
         }
 
         wrapper.appendChild(large);
