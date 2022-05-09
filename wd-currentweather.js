@@ -223,7 +223,7 @@ Module.register("wd-currentweather", {
 
             var feelsLike = document.createElement("span");
             feelsLike.className = "dimmed";
-            feelsLike.innerHTML = this.translate("FEELS") + " " + this.feelsLike + degreeLabel;
+            feelsLike.innerHTML = this.translate("FEELS", {DEGREE: this.feelsLike});
             if ( otherFeelsLike !== null ) {
               feelsLike.innerHTML += nativeUnits + " / " + otherFeelsLike + degreeLabel + otherUnits;
             }
